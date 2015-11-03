@@ -85,6 +85,16 @@ eqall2=Flatten[{eqss2}];
 (*Inits*)
 
 
+initspin={2,2,2,2,2,1,2,1,1,1,1,1};
+
+
+random[mean_,var_]:=If[var!=0,RandomVariate[NormalDistribution[mean,Sqrt[var]]],mean]
+
+
+(* ::Subsubsection:: *)
+(*spins*)
+
+
 mean[op_,vec_]:=vec\[Conjugate].op.vec
 
 
@@ -97,16 +107,46 @@ spinmean=Table[mean[PauliMatrix[sp]/2,#],{sp,3}]&/@{{1,0},{0,1}};
 spincov=Table[cov[PauliMatrix[sp1]/2,PauliMatrix[sp2]/2,#],{sp1,3},{sp2,3}]&/@{{1,0},{0,1}};
 
 
-random[mean_,var_]:=If[var!=0,RandomVariate[NormalDistribution[mean,Sqrt[var]]],mean]
-
-
-initspin={2,2,2,2,2,1,2,1,1,1,1,1};
-
-
 initsS:=Table[cS[addl[ss]][sp][0]==random[spinmean[[initspin[[addl[ss]]],sp]],spincov[[initspin[[addl[ss]]],sp,sp]]],{ss,length},{sp,3}]
 
 
-initsB:=Table[cB[addl[ss]][sp1,sp2][0]==random[spinmean[[initspin[[addl[ss]]],sp1]]spinmean[[initspin[[addl[ss+1]]],sp2]],spincov[[initspin[[ss]],sp1,sp1]]spincov[[initspin[[addl[ss+1]]],sp2,sp2]]],{ss,bsites},{sp1,3},{sp2,3}]
+(* ::Subsubsection:: *)
+(*bispins*)
+
+
+bindlist=Tuples[Range[3],2];
+
+
+cor[op1_,op2_,vec_]:=vec\[Conjugate].(op1.op2).vec
+
+
+spincor=Table[cor[PauliMatrix[sp1]/2,PauliMatrix[sp2]/2,#],{sp1,3},{sp2,3}]&/@{{1,0},{0,1}};
+
+
+bimean[ss_,sp1_,sp2_]:=spinmean[[initspin[[addl[ss]]],sp1]]spinmean[[initspin[[addl[ss+1]]],sp2]]
+
+
+bicov[ss_,sp1_,sp2_,sp3_,sp4_]:=(spincor[[initspin[[addl[ss]]],sp1,sp3]]spincor[[initspin[[addl[ss+1]]],sp2,sp4]]+spincor[[initspin[[addl[ss]]],sp3,sp1]]spincor[[initspin[[addl[ss+1]]],sp4,sp2]])/2-
+spinmean[[initspin[[addl[ss]]],sp1]]spinmean[[initspin[[addl[ss+1]]],sp2]]spinmean[[initspin[[addl[ss]]],sp3]]spinmean[[initspin[[addl[ss+1]]],sp4]]
+
+
+covmat[ss_]:=Outer[bicov@@Join[{addl[ss]},#1,#2]&,bindlist,bindlist,1]
+
+
+rotmat=Normalize/@Eigenvectors[covmat[addl[#]]]&/@Range[length];
+
+
+rotcov=Eigenvalues[covmat[addl[#]]]&/@Range[length];
+
+
+rotmean=Table[rotmat[[ss]].(bimean@@Join[{addl[ss]},#]&/@bindlist),{ss,length}];
+
+
+initsB:=(
+initsrot=Table[random[rotmean[[ss,bv]],rotcov[[ss,bv]]],{ss,length},{bv,9}];
+initsorigbasis=MapThread[Dot,{Transpose[rotmat,{1,3,2}],initsrot},1];
+Table[((cB[addl[ss]])@@bindlist[[bi]])[0]==initsorigbasis[[ss,bi]],{ss,bsites},{bi,9}]
+)
 
 
 (* ::Subsection:: *)
