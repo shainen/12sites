@@ -13,7 +13,7 @@ steps=500;
 times=Range[0,tmax,tmax/(steps-1)];
 
 
-runs=100;
+runs=10;
 
 
 length=12;
@@ -57,7 +57,7 @@ hamself[ss_]:=fieldsW5[[addl[ss]]]cS[addl[ss]][3][t]
 sscoup[ss_]:=j(cS[addl[ss]][1][t]cS[addl[ss+1]][1][t]+cS[addl[ss]][2][t]cS[addl[ss+1]][2][t]+cS[addl[ss]][3][t]cS[addl[ss+1]][3][t])
 
 
-bcoup[ss_]:=j(cB[addl[ss]][1,1][t]+cB[addl[ss]][2,2][t]+ cB[addl[ss]][3,3][t])
+bcoup[ss_]:=j(cB[addl[ss]][1,1][t]+cB[addl[ss]][2,2][t]+cB[addl[ss]][3,3][t])
 
 
 hamcoupsu4[ss_]:=If[MemberQ[bsites,addl[ss]],bcoup[addl[ss]],sscoup[addl[ss]]]
@@ -114,23 +114,28 @@ initsS:=Table[cS[addl[ss]][sp][0]==random[spinmean[[initspin[[addl[ss]]],sp]],sp
 (*bispins*)
 
 
-bindlist=Tuples[Range[3],2];
+bmat[s1_,s2_]:=KroneckerProduct[PauliMatrix[s1],PauliMatrix[s2]]/If[s1==0||s2==0,2,4]
 
 
-cor[op1_,op2_,vec_]:=vec\[Conjugate].(op1.op2).vec
+vecud[s1_,s2_]:=Flatten[Normal[KroneckerProduct[SparseArray[{initspin[[addl[s1]]]}->1,{2}],SparseArray[{initspin[[addl[s2]]]}->1,{2}]]]]
 
 
-spincor=Table[cor[PauliMatrix[sp1]/2,PauliMatrix[sp2]/2,#],{sp1,3},{sp2,3}]&/@{{1,0},{0,1}};
+su4matrices=Join[bmat[#,0]&/@Range[3],bmat[0,#]&/@Range[3],Flatten[Outer[bmat,Range[3],Range[3]],1]];
 
 
-bimean[ss_,sp1_,sp2_]:=spinmean[[initspin[[addl[ss]]],sp1]]spinmean[[initspin[[addl[ss+1]]],sp2]]
+su4varnames[ss_]:=Flatten[{cS[addl[ss]]/@Range[3],cS[addl[ss+1]]/@Range[3],Outer[cB[addl[ss]],Range[3],Range[3]]}]
 
 
-bicov[ss_,sp1_,sp2_,sp3_,sp4_]:=(spincor[[initspin[[addl[ss]]],sp1,sp3]]spincor[[initspin[[addl[ss+1]]],sp2,sp4]]+spincor[[initspin[[addl[ss]]],sp3,sp1]]spincor[[initspin[[addl[ss+1]]],sp4,sp2]])/2-
-spinmean[[initspin[[addl[ss]]],sp1]]spinmean[[initspin[[addl[ss+1]]],sp2]]spinmean[[initspin[[addl[ss]]],sp3]]spinmean[[initspin[[addl[ss+1]]],sp4]]
+matmean[op_,vec_]:=vec\[Conjugate].op.vec
 
 
-covmat[ss_]:=Outer[bicov@@Join[{addl[ss]},#1,#2]&,bindlist,bindlist,1]
+bimean[ss_]:=matmean[#,vecud[addl[ss],addl[ss+1]]]&/@su4matrices
+
+
+matcov[op1_,op2_,vec_]:=vec\[Conjugate].(op1.op2+op2.op1).vec/2-vec\[Conjugate].op1.vec vec\[Conjugate].op2.vec
+
+
+covmat[ss_]:=Outer[matcov[#1,#2,vecud[addl[ss],addl[ss+1]]]&,su4matrices,su4matrices,1]
 
 
 rotmat=Normalize/@Eigenvectors[covmat[addl[#]]]&/@Range[length];
@@ -139,13 +144,13 @@ rotmat=Normalize/@Eigenvectors[covmat[addl[#]]]&/@Range[length];
 rotcov=Eigenvalues[covmat[addl[#]]]&/@Range[length];
 
 
-rotmean=Table[rotmat[[ss]].(bimean@@Join[{addl[ss]},#]&/@bindlist),{ss,length}];
+rotmean=Table[rotmat[[ss]].bimean[addl[ss]],{ss,length}];
 
 
 initsB:=(
-initsrot=Table[random[rotmean[[ss,bv]],rotcov[[ss,bv]]],{ss,length},{bv,9}];
+initsrot=Table[random[rotmean[[ss,bv]],rotcov[[ss,bv]]],{ss,length},{bv,15}];
 initsorigbasis=MapThread[Dot,{Transpose[rotmat,{1,3,2}],initsrot},1];
-Table[((cB[addl[ss]])@@bindlist[[bi]])[0]==initsorigbasis[[ss,bi]],{ss,bsites},{bi,9}]
+Table[su4varnames[addl[ss]][[bi]][0]==initsorigbasis[[ss,bi]],{ss,bsites},{bi,15}]
 )
 
 
@@ -153,17 +158,17 @@ Table[((cB[addl[ss]])@@bindlist[[bi]])[0]==initsorigbasis[[ss,bi]],{ss,bsites},{
 (*run TWA*)
 
 
-eachTWA4=Table[solv=NDSolveValue[Flatten[{eqall4,initsS,initsB}],Flatten[Table[cS[addl[ss]][sp],{ss,length},{sp,3}]],{t,0,tmax}];{(Through[solv[#]]&/@times)\[Transpose],Total[(Through[solv[#]]Through[solv[0]]&/@times)\[Transpose]]/length},{rr,runs}];
+eachTWA4=Table[solv=NDSolveValue[Flatten[{eqall4,initsB}],Flatten[Table[cS[addl[ss]][sp],{ss,length},{sp,3,3}]],{t,0,tmax}];{(Through[solv[#]]&/@times)\[Transpose],Total[(Through[solv[#]]Through[solv[0]]&/@times)\[Transpose]]/length},{rr,runs}];
 fullTWA4=Total[eachTWA4]/runs;
 sqTWA4=Total[eachTWA4^2]/runs;
 
 
-eachTWA2=Table[solv=NDSolveValue[Flatten[{eqall2,initsS}],Flatten[Table[cS[addl[ss]][sp],{ss,length},{sp,3}]],{t,0,tmax}];{(Through[solv[#]]&/@times)\[Transpose],Total[(Through[solv[#]]Through[solv[0]]&/@times)\[Transpose]]/length},{rr,runs}];
+(*eachTWA2=Table[solv=NDSolveValue[Flatten[{eqall2,initsS}],Flatten[Table[cS[addl[ss]][sp],{ss,length},{sp,3,3}]],{t,0,tmax}];{(Through[solv[#]]&/@times)\[Transpose],Total[(Through[solv[#]]Through[solv[0]]&/@times)\[Transpose]]/length},{rr,runs}];
 fullTWA2=Total[eachTWA2]/runs;
-sqTWA2=Total[eachTWA2^2]/runs;
+sqTWA2=Total[eachTWA2^2]/runs;*)
 
 
 mmu=MaxMemoryUsed[]/10.^6;
 
 
-Save["12site.dat",{mmu,fullTWA2,sqTWA2,fullTWA4,sqTWA4}];
+Save["12site.dat",{mmu,(*fullTWA2,sqTWA2,*)fullTWA4,sqTWA4}];
